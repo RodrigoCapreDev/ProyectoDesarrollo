@@ -62,6 +62,18 @@ namespace WebAPI.Controllers
 
         }
 
+        [Authorize(Roles = "admin")]
+        [HttpPut("modificar-estado")]
+        public async Task<IActionResult> ModificarEstadoSolicitud([FromBody] SolicitudModEstadoDTO solicitudModEstadoDTO)
+        {
+            var solicitudActualizada = await _solicitudServicio.ModificarEstadoSolicitudAsync(solicitudModEstadoDTO);
+            if (solicitudActualizada == null)
+            {
+                return NotFound();
+            }
+            return Ok(solicitudActualizada);
+        }
+
     }
 
 

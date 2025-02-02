@@ -89,6 +89,21 @@ namespace Servicios
 
             return solicitudesDTO;
         }
+
+        public async Task<SolicitudRespuestaDTO> ModificarEstadoSolicitudAsync(SolicitudModEstadoDTO solicitudModEstadoDTO)
+        {
+            var solicitud = await _context.SolicitudServicio.FindAsync(solicitudModEstadoDTO.IdSolicitud);
+            if (solicitud == null)
+            {
+                return null;
+            }
+
+            solicitud.IdSolicitudServicioEstado = solicitudModEstadoDTO.NuevoEstadoId;
+            await _context.SaveChangesAsync();
+
+            var solicitudActualizada = await ObtenerSolicitudPorIdAsync(solicitud.Id);
+            return solicitudActualizada;
+        }
     }
 }
 
