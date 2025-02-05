@@ -3,7 +3,7 @@ import RequestForm from '../components/Requests/RequestForm';
 import './RequestPage.css';
 import { useLocation } from 'react-router-dom';
 
-export default function RepairRequest() {
+export default function RequestPage() {
     const location = useLocation();
     const queryParams = new URLSearchParams(location.search);
     const type = queryParams.get('type');

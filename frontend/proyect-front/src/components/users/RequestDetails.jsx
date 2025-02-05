@@ -11,6 +11,7 @@ export default function RequestDetails() {
   const { id: solicitudId } = useParams();
   const backendURL = useBackendURL();
   const [fechaFormateada, setFechaFormateada] = useState('');
+  const [idCategoria, setIdCategoria] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -23,6 +24,9 @@ export default function RequestDetails() {
         const fechaGeneracion= new Date(response.data.fechaGeneracion);
         const opciones = { day: '2-digit', month: '2-digit', year: 'numeric' };
         setFechaFormateada(fechaGeneracion.toLocaleDateString('es-ES', opciones));
+        const tipoProductoId = response.data.tipoDeProductoId;
+        const categoriaResponse = await axios.get(`${backendURL}/api/categoria/tipoProducto/${tipoProductoId}/categoriaId`);
+        setIdCategoria(categoriaResponse.data);
       } catch (error) {
         console.error('Error fetching solicitud details:', error);
       }
@@ -74,7 +78,7 @@ export default function RequestDetails() {
             <Form.Label>Categoria</Form.Label>
             <Form.Control
               type='text'
-              value={solicitud.categoria}
+              value={idCategoria}
               readOnly
             >
             </Form.Control>
@@ -89,7 +93,6 @@ export default function RequestDetails() {
             </Form.Control>
           </div>
         </div>
-
         <div className="my-4"></div>
         <div className='row'>
           <div className='col-12'>
