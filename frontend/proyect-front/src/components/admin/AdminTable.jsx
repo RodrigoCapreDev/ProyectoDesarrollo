@@ -12,6 +12,7 @@ export default function AdminTable({
   onEditSave, 
   onDeleteConfirm, 
   renderEditForm, 
+  validateEdit,
   editModalTitle = "Editar Elemento",
   deleteModalTitle = "Confirmar Eliminación",
   deleteModalMessage = "¿Estás seguro de que quieres eliminar este elemento?",
@@ -22,13 +23,15 @@ export default function AdminTable({
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
+  const [editErrors, setEditErrors] = useState({});
 
   useEffect(() => {
     setData(initialData);
   }, [initialData]);
 
   const handleEdit = (item) => {
-    setSelectedItem(item);
+    setSelectedItem({ ...item });
+    setEditErrors({});
     setShowEditModal(true);
   };
   const handleDelete = (id) => {
@@ -42,21 +45,39 @@ export default function AdminTable({
       [e.target.name]: e.target.value,
     };
     setSelectedItem(updatedItem);
-    setData(data.map(item => (item.id === updatedItem.id ? updatedItem : item)));
   };
 
-  // Guarda los cambios en la edición (llama al callback externo)
   const handleSave = () => {
-    if (onEditSave && selectedItem) {
+    if (!selectedItem) return;
+    if (validateEdit) {
+      try {
+        const errors = validateEdit(selectedItem) || {};
+        if (errors && Object.keys(errors).length > 0) {
+          setEditErrors(errors);
+          return;
+        }
+      } catch (err) {
+        console.error('Validation function threw an error', err);
+      }
+    }
+    setEditErrors({});
+
+    if (onEditSave) {
       onEditSave(selectedItem)
         .then((updatedItem) => {
           setData(data.map(item => (item.id === updatedItem.id ? updatedItem : item)));
-          setShowEditModal(false);
+          closeEditModal();
         })
         .catch((error) => {
           console.error("Error al guardar la edición:", error);
         });
     }
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setSelectedItem(null);
+    setEditErrors({});
   };
 
   // Confirma la eliminación (llama al callback externo)
@@ -146,17 +167,17 @@ export default function AdminTable({
       </table>
       {/* Modal de Edición */}
       {onEditSave && (
-        <Modal show={showEditModal} onHide={() => setShowEditModal(false)}>
+        <Modal show={showEditModal} onHide={closeEditModal}>
           <Modal.Header closeButton>
             <Modal.Title>{editModalTitle}</Modal.Title>
           </Modal.Header>
           <Modal.Body>
             {selectedItem && renderEditForm
-              ? renderEditForm(selectedItem, handleEditChange)
+              ? renderEditForm(selectedItem, handleEditChange, editErrors)
               : null}
           </Modal.Body>
           <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowEditModal(false)}>
+            <Button variant="secondary" onClick={closeEditModal}>
               Cancelar
             </Button>
             <Button variant="primary" onClick={handleSave}>

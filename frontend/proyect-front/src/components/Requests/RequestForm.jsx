@@ -32,7 +32,7 @@ export const RequestForm = () => {
     defaultValues: {
       productData: { serviceId: 0, categoryId: 0, productTypeId: 0, maintenanceTypeId: 0, problemDescription: '' },
       personalData: { email: '', firstName: '', lastName: '' },
-      logisticsData: { conLogistica: false, street: '', number: '', floor: '', apartment: '', cityId: '', stateId: '', zipCode: '' },
+      logisticsData: { conLogistica: false, addressSelected: false, street: '', number: '', floor: '', apartment: '', cityId: '', stateId: '', zipCode: '' },
     }
   });
 
@@ -46,17 +46,16 @@ export const RequestForm = () => {
   const handleSubmit = async (data) => {
 
     const DataToSend = {
-      userEmail: data.personalData.email,
       descripcion: data.productData.problemDescription,
       idTipoServicio: parseInt(data.productData.serviceId, 10),
-      idTipoProducto: parseInt(data.productData.productTypeId, 10),
+      idProducto: parseInt(data.productData.productTypeId, 10),
       conLogistica: data.logisticsData.conLogistica,
     };
     if (data.productData.serviceId === 2) { DataToSend.idTipoMantenimiento = data.productData.maintenanceTypeId; }
 
     const envioData = data.logisticsData;
     if (envioData.conLogistica) { data.logisticsData.conLogistica = true; }
-    if (envioData.conLogistica) {
+/*    if (envioData.conLogistica) {
       DataToSend.envio = {
         calle: envioData.street,
         numero: envioData.number,
@@ -66,7 +65,7 @@ export const RequestForm = () => {
       }
     } else {
       DataToSend.envio = null;
-    }
+    } */
     console.log("Formulario completado", DataToSend);
     createRequest(DataToSend);
   };
@@ -110,6 +109,12 @@ export const RequestForm = () => {
     }
     else if (currentStep === 1) { return isAuthenticated; }
     else if (currentStep === 2) {
+      const currentData = watch();
+      if (currentData.logisticsData?.conLogistica) {
+        return !!currentData.logisticsData?.addressSelected;
+      } else { return true; }
+    }
+    /*else if (currentStep === 2) {
       if (currentData.logisticsData.conLogistica) {
         return currentData.logisticsData.street &&
           currentData.logisticsData.number &&
@@ -117,7 +122,7 @@ export const RequestForm = () => {
           currentData.logisticsData.zipCode &&
           currentData.logisticsData.stateId;
       } else { return true; }
-    }
+    }*/
     else if (currentStep === 3) { return true; }
   };
 
@@ -137,7 +142,7 @@ export const RequestForm = () => {
       <div className="form-data mt-4">
         {currentStep === 0 && <StepProductData formData={watch()} control={control} errors={errors} setValue={setValue} />}
         {currentStep === 1 && <StepPersonalData formData={watch()} control={control} errors={errors} setValue={setValue} />}
-        {currentStep === 2 && <StepLogistics formData={watch()} control={control} errors={errors} />}
+        {currentStep === 2 && <StepLogistics formData={watch()} control={control} errors={errors} setValue={setValue} />}
         {currentStep === 3 && <FormSummary formData={watch()} control={control} errors={errors} />}
       </div>
       <div className="mt-4 mb-3 container-buttons">

@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Form } from 'react-bootstrap';
-import axios from 'axios';
-import { useBackendURL } from '../../contexts/BackendURLContext';
+import { Form, Modal } from 'react-bootstrap';
 import StepProgressBar from './RequestManagmentSteps/StepProgressBar.jsx';
 import StartedStep from './RequestManagmentSteps/StartedStep.jsx';
 import ReviewedStep from './RequestManagmentSteps/ReviewedStep.jsx';
@@ -13,173 +11,177 @@ import CancelModalForm from './RequestManagmentSteps/CancelModalForm.jsx';
 import apiService from '../../services/axiosConfig.jsx';
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faTableCellsLarge, faScrewdriverWrench } from "@fortawesome/free-solid-svg-icons";
-import apiReparacionExterna from '../../services/apiBolsaTrabajoService.jsx';
-
+import AddressCard from '../users/UserAddressCard.jsx';
 import { Button } from 'react-bootstrap';
 import './RequestManagement.css';
 import CancelStep from './RequestManagmentSteps/CancelStep.jsx';
+import { Toast, ToastContainer } from 'react-bootstrap'
 
 function RequestManagement() {
   const [solicitud, setSolicitud] = useState(null);
   const { id: solicitudId } = useParams();
-  const backendURL = useBackendURL();
-  const [fechaFormateada, setFechaFormateada] = useState('');
+  //const [fechaFormateada, setFechaFormateada] = useState('');
   const navigate = useNavigate();
-  const steps = ["Iniciada", "Revisada", "Presupuestada", "Aprobada", "Finalizada"];
-  const [currentStep, setCurrentStep] = useState("Iniciada");
+
+  //UI States
   const [showCancelModalForm, setShowCancelModalForm] = useState(false);
+  const [showAddressModal, setShowAddressModal] = useState(false);
+  const [domicilioModalData, setDomicilioModalData] = useState(null);
+  const [ServiceState, setServiceState] = useState(null);
+  const [toastConfig, setToastConfig] = useState({ show: false, message: '', variant: 'danger' });
+
+  const steps = ["Iniciada", "Revisada", "Presupuestada", "Aprobada", "Finalizada"];
+
+  const currentStep = solicitud?.estado_nombre || solicitud?.estado || "Iniciada";
 
   useEffect(() => {
+    let isMounted = true; // Flag para saber si el componente sigue vivo
     const fetchSolicitudDetails = async () => {
       try {
         console.log('Fetching solicitud details...');
-        const response = await axios.get(`${backendURL}/api/solicitud/${solicitudId}`);
-        console.log('Solicitud details:', response.data);
-        setSolicitud(response.data);
-        setCurrentStep(response.data.estado);
-        const fechaGeneracion = new Date(response.data.fechaGeneracion);
-        const opciones = { day: '2-digit', month: '2-digit', year: 'numeric' };
-        setFechaFormateada(fechaGeneracion.toLocaleDateString('es-ES', opciones));
+        const response = await apiService.getRequestByIdAdmin(solicitudId);
+
+        if (isMounted) {
+
+          //console.log('Solicitud details:', response.data);
+          setSolicitud(response.data);
+        }
       } catch (error) {
-        console.error('Error fetching solicitud details:', error);
+
+        if (isMounted) console.error('Error fetching solicitud details:', error);
+
       }
     }
     fetchSolicitudDetails();
-  }, [solicitudId, backendURL, apiService]);
 
-  const updateSolicitudEstado = async (newStep, stepIndex) => {
+    return () => { isMounted = false; };
+  }, [solicitudId]);
+
+  useEffect(() => {
+    const fetchStateDetail = async () => {
+      if (solicitud && solicitud.id_solicitud_servicio_estado) {
+        try {
+          const response = await apiService.getDetailServiceState(solicitud.id_solicitud_servicio_estado);
+          //console.log('State detail:', response.data);
+          setServiceState(response.data);
+        } catch (error) {
+          console.error('Error fetching state detail:', error);
+        }
+      }
+    };
+    fetchStateDetail();
+  }, [solicitud?.id_solicitud_servicio_estado]);
+
+  const executeOptimisticAction = async (updates, apiAction, successMsg = null, errorMsg = "Error al guardar cambios") => {
+    const backupSolicitud = JSON.parse(JSON.stringify(solicitud));
+
+    setSolicitud(prev => ({ ...prev, ...updates }));
+
     try {
-      console.log('Updating request state...');
-      const requestData = { id: solicitudId, idSolicitudServicioEstado: stepIndex + 2 };
-      await apiService.updateRequestStateAdmin(requestData);
-      setCurrentStep(newStep);
-      setSolicitud(prevSolicitud => ({
-        ...prevSolicitud,
-        estado: newStep
-      }));
-      console.log('Updated solicitud:', {
-        ...solicitud,
-        estado: newStep
+      await apiAction();
+
+      console.log("Acción exitosa en servidor");
+      if (successMsg) {
+        setToastConfig({ show: true, message: successMsg, variant: 'success' });
+      }
+
+    } catch (error) {
+      // 4. ROLLBACK AUTOMÁTICO
+      console.error("Falló la acción, revirtiendo...", error);
+
+      setSolicitud(backupSolicitud);
+
+      const serverMessage = error.response?.data?.error || error.response?.data?.message || error.response?.data?.detail;
+      const finalMessage = serverMessage || errorMsg; //Si no usamos el generico
+
+      setToastConfig({
+        show: true,
+        message: `${finalMessage}. Se han revertido los cambios.`,
+        variant: 'danger'
       });
-    } catch (error) {
-      console.error('Error updating request state:', error);
     }
   };
-  const updateSolicitudEnvio = async (solicitud) => {
-    try {
-      console.log('Updating request deliver...');
-      await apiService.updateRequestDeliverAdmin(solicitud.id, solicitud.envio);
-      console.log('Updated request deliver');
-    } catch (error) {
-      console.error('Error updating request state:', error);
-    }
-  };
+  
+  const handleNextStep = async (incomingData = null) => {
 
-  const updateRequestBudgeted = async () => {
-    try {
-      const stepIndex = steps.indexOf(currentStep);
-      const newStep = steps[stepIndex + 1];
-      console.log('Updating request state...', solicitud);
-      const requestData = {
-        id: solicitudId,
-        diagnosticoTecnico: solicitud.diagnosticoTecnico,
-        idSolicitudServicioEstado: stepIndex + 2,
-        monto: solicitud.monto,
-        fechaEstimada: solicitud.fechaEstimada
-      };
-      await apiService.updateRequestBudgetAdmin(requestData);
-      setCurrentStep(newStep);
-      setSolicitud(prevSolicitud => ({
-        ...prevSolicitud,
-        estado: newStep
-      }));
-      console.log('Updated solicitud:', {
-        ...solicitud,
-        estado: newStep
-      });
-    } catch (error) {
-      console.error('Error updating request state:', error);
-    }
-  };
-
-  const UpdateRequestFinished = async () => {
-    try {
-      const stepIndex = steps.indexOf(currentStep);
-      const newStep = steps[stepIndex + 1];
-      console.log('Updating request state...', solicitud);
-      const requestData = {
-        id: solicitudId,
-        resumen: solicitud.Resumen,
-        idSolicitudServicioEstado: stepIndex + 2,
-      };
-      await apiService.updateRequestFinished(requestData);
-      setCurrentStep(newStep);
-      setSolicitud(prevSolicitud => ({
-        ...prevSolicitud,
-        estado: newStep
-      }));
-      console.log('Updated solicitud:', {
-        ...solicitud,
-        estado: newStep
-      });
-    } catch (error) {
-      console.error('Error updating request state:', error);
-    }
-  };
-
-  const nextStep = async () => {
-    console.log('Next step');
     const stepIndex = steps.indexOf(currentStep);
-    console.log('stepIndex:', stepIndex);
-    if (stepIndex < steps.length - 1 && steps[stepIndex + 1] !== 'Presupuestada' && steps[stepIndex + 1] !== 'Revisada' && steps[stepIndex + 1] !== 'Finalizada') {
-      const newStep = steps[stepIndex + 1];
-      console.log('step viejo:', newStep);
-      await updateSolicitudEstado(newStep, stepIndex);
-      console.log('Updated step nuevo:', newStep);
-    }
-    if (steps[stepIndex + 1] === 'Revisada') {
-      const newStep = steps[stepIndex + 1];
-      const id = solicitud.id;
-      if (solicitud.conLogistica) await updateSolicitudEnvio(solicitud);
-      await updateSolicitudEstado(newStep, stepIndex);
-      await apiService.updateRequestReviewed(id);
-    }
+    if (stepIndex >= steps.length - 1) return;
 
-    if (steps[stepIndex + 1] === 'Presupuestada') {
-      console.log('Solicitud: ', solicitud);
-      await updateRequestBudgeted();
-    }
-    if (steps[stepIndex + 1] === 'Finalizada') {
-      console.log('Solicitud: ', solicitud);
-      await UpdateRequestFinished();
-    }
-  };
-  const handleSubcontractStep = async () => {
-    const stepIndex = steps.indexOf(currentStep);
-    const newStep = steps[stepIndex + 1];
-    const requestData = {
-      id: solicitud.id,
-      idSolicitudServicioEstado: 2,
-      tercearizado: true,
-      idEmpresa: 1,
-      IdSolicitudExterna: solicitud.IdSolicitudExterna,
+    const nextStepName = steps[stepIndex + 1];
+
+    const uiUpdates = {
+      estado: nextStepName,
+      estado_nombre: nextStepName,
+      ...incomingData
     };
 
-    console.log('data to send:', requestData);
+    const apiWorker = async () => {
+      const idEstado = stepIndex + 2;
+      if (nextStepName === 'Revisada') {
+        await apiService.updateRequestStateAdmin({ id: solicitudId, idSolicitudServicioEstado: idEstado });
+        await apiService.updateRequestReviewed(solicitudId);
+      }
+      else if (nextStepName === 'Presupuestada') {
+        // Combinamos datos actuales con los nuevos para enviar todo completo
+        const source = { ...solicitud, ...incomingData };
+        const requestData = {
+          id: solicitudId,
+          idSolicitudServicioEstado: idEstado,
+          diagnosticoTecnico: source.diagnosticoTecnico ?? source.diagnostico_tecnico ?? '',
+          monto: source.monto,
+          fechaEstimada: source.fechaEstimada ?? source.fecha_estimada ?? null
+        };
+        await apiService.updateRequestBudgetAdmin(requestData);
+      }
+      else if (nextStepName === 'Finalizada') {
+        const source = { ...solicitud, ...incomingData };
+        const requestData = {
+          id: solicitudId,
+          idSolicitudServicioEstado: idEstado,
+          resumen: source.resumen ?? source.Resumen ?? source.localResumen
+        };
+        await apiService.updateRequestFinished(requestData);
+      }
+      else {
+        // Caso genérico (ej: Aprobada)
+        await apiService.updateRequestStateAdmin({ id: solicitudId, idSolicitudServicioEstado: idEstado });
+      }
+    };
 
-    if (solicitud.conLogistica) await updateSolicitudEnvio(solicitud);
-    await apiService.updateRequestSubcontractAdmin(requestData);
-    setCurrentStep(newStep);
-    setSolicitud(prevSolicitud => ({
-      ...prevSolicitud,
-      estado: newStep
-    }));
-    console.log('Updated solicitud:', {
-      ...solicitud,
-      estado: newStep
-    });
-
+    await executeOptimisticAction(
+      uiUpdates,
+      apiWorker,
+      `Estado actualizado a: ${nextStepName}`,
+      `Error al pasar a estado ${nextStepName}`
+    );
   };
+
+  const handleConfirmCancel = async (motivoReason) => {
+    const prevSolicitud = { ...solicitud };
+    setShowCancelModalForm(false);
+    const uiUpdates = {
+      estado: 'Cancelada',
+      estado_nombre: 'Cancelada',
+      resumen: motivoReason
+    };
+    setSolicitud(prev => ({
+      ...prev,
+      ...uiUpdates
+    }));
+
+    const apiWorker = async () => {
+      console.log('Canceling request with reason:', motivoReason);
+      await apiService.cancelRequest(solicitudId, { resumen: motivoReason });
+    };
+
+    await executeOptimisticAction(
+      uiUpdates,
+      apiWorker,
+      'Solicitud cancelada correctamente',
+      'No se pudo cancelar la solicitud'
+    );
+  };
+
   const handleCancelButton = () => {
     setShowCancelModalForm(true);
   };
@@ -201,23 +203,29 @@ function RequestManagement() {
   }
 
   const renderContent = () => {
-    switch (solicitud.estado) {
+    const estadoNombre = currentStep;
+    switch (estadoNombre) {
       case 'Iniciada':
-        return <StartedStep solicitud={solicitud} nextStep={nextStep} subcontractStep={handleSubcontractStep} cancelStep={handleCancelButton} />;
+        return <StartedStep solicitud={solicitud} nextStep={handleNextStep} cancelStep={handleCancelButton} />;
       case 'Revisada':
-        return <ReviewedStep solicitud={solicitud} nextStep={nextStep} cancelStep={handleCancelButton} handleChange={handleChange} />;
+        return <ReviewedStep solicitud={solicitud} nextStep={handleNextStep} cancelStep={handleCancelButton} handleChange={handleChange} />;
       case 'Presupuestada':
-        return <BudgetedStep solicitud={solicitud} nextStep={nextStep} cancelStep={handleCancelButton} handleChange={handleChange} />;
+        return <BudgetedStep solicitud={solicitud} nextStep={handleNextStep} cancelStep={handleCancelButton} handleChange={handleChange} />;
       case 'Aprobada':
-        return <ApprovedStep solicitud={solicitud} nextStep={nextStep} cancelStep={handleCancelButton} handleChange={handleChange} />;
+        return <ApprovedStep solicitud={solicitud} nextStep={handleNextStep} cancelStep={handleCancelButton} handleChange={handleChange} />;
       case 'Finalizada':
         return <FinishedStep solicitud={solicitud} />;
       case 'Cancelada':
         return <CancelStep solicitud={solicitud} />;
       default:
+        if (solicitud.id_solicitud_servicio_estado === 1) return <StartedStep solicitud={solicitud} nextStep={handleNextStep} cancelStep={handleCancelButton} />;
         return <div>Error al obtener el estado</div>;
     }
   };
+
+  const fechaFormateada = solicitud?.fechaGeneracion
+    ? new Date(solicitud.fechaGeneracion).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : '';
 
   return (
     <div className='requestManagement w-100'>
@@ -229,17 +237,17 @@ function RequestManagement() {
           <div className='flex-grow-1 text-center'>
             <h2>Gestión de solicitud #{solicitudId}</h2>
             <p style={{ color: 'gray' }}>
-              Generada: {fechaFormateada} {new Date(solicitud.fechaGeneracion).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+              Generada: {fechaFormateada}
             </p>
           </div>
           <div style={{ width: '80px' }}></div>
         </div>
       </div>
       <StepProgressBar solicitud={solicitud} currentStep={currentStep} />
-      {(solicitud.estado === 'Cancelada' && !solicitud.fechaIniciada) && (
-      <div className="alert alert-danger alert-dismissible fade show" role="alert">
-        <strong>¡Atención!</strong> La solicitud ha sido <strong>cancelada</strong>.
-      </div>
+      {((solicitud.estado_nombre || solicitud.estado || solicitud.id_solicitud_servicio_estado) === 'Cancelada' && !solicitud.fecha_iniciada) && (
+        <div className="alert alert-danger alert-dismissible fade show" role="alert">
+          <strong>¡Atención!</strong> La solicitud ha sido <strong>cancelada</strong>.
+        </div>
       )}
       <hr style={{ borderTop: '1px solid lightgray', margin: '1%' }} />
       <div className='details d-flex flex-row justify-content' >
@@ -257,29 +265,33 @@ function RequestManagement() {
         </div>
         <div className="logistics-details ms-3 p-3 border rounded shadow-sm bg-light mb-2">
           <div className="d-flex flex-column">
-            <span className="mb-2 "><b>Logistica:</b>
-              <span className='ms-2'></span>{solicitud.conLogistica ? 'Si' : 'No'}
+            <span className="mb-2 "><b>A domicilio:</b>
+              <span className='ms-2'></span>{solicitud.con_logistica ? 'Si' : 'No'}
             </span>
-            <span className="mb-2">Nro seguimiento:<span className='ms-2'></span>{solicitud.envio ? solicitud.envio.nroSeguimiento : '-'}</span>
-          </div>
-        </div>
-        <div className="subContract-details ms-3 p-3 border rounded shadow-sm bg-light mb-2">
-          <div className="d-flex flex-column">
-            <span className="mb-2 "><b>SubContratada:</b>
-              {solicitud.tercearizado ? (
-                <span className='ms-2'>Si</span>
-              ) : (
-                <span className='ms-2'>No</span>
-              )}
-            </span>
-            {solicitud.tercearizado && (
-              <>
-                <span className='mb-2'>Empresa Externa: {solicitud.reparacionExterna?.empresa.nombre}</span>
-                <span className='mb-2'>ID Solicitud Externa: {solicitud.reparacionExterna?.idSolicitudExterna}</span>
-              </>
+            {solicitud.con_logistica && (
+              <div className="mt-2">
+                <button className="btn btn-link p-0" onClick={async () => {
+                  try {
+                    const resp = await apiService.getProfiles();
+                    const profiles = resp.data || [];
+                    const profile = profiles.find(p => p.email === solicitud.emailSolicitante || (p.id && p.id.email === solicitud.emailSolicitante));
+                    const domicilio = profile?.domicilio ?? null;
+                    setDomicilioModalData(domicilio);
+                    setShowAddressModal(true);
+                  } catch (err) {
+                    console.error('Error fetching profiles for address modal:', err);
+                    setDomicilioModalData(null);
+                    setShowAddressModal(true);
+                  }
+                }}>
+                  Ver domicilio
+                </button>
+              </div>
             )}
+
           </div>
         </div>
+
       </div>
       <div className='row d-flex request-basics p-3'>
         <div className='col-4'>
@@ -301,7 +313,7 @@ function RequestManagement() {
           </Form.Label>
           <Form.Control
             type='text'
-            value={solicitud.tipoDeProducto}
+            value={solicitud.producto}
             readOnly
           >
           </Form.Control>
@@ -313,7 +325,52 @@ function RequestManagement() {
         </div>
       </div>
       <div className="d-flex justify-content-center" style={{ height: '50px' }}></div>
-      <CancelModalForm show={showCancelModalForm} onClose={handleCloseCancelModalForm} />
+
+      <ToastContainer position="top-end" className="p-3" style={{ zIndex: 9999 }}>
+        <Toast
+          onClose={() => setToastConfig(prev => ({ ...prev, show: false }))}
+          show={toastConfig.show}
+          delay={5000}
+          autohide
+          bg={toastConfig.variant}
+        >
+          <Toast.Header>
+            <strong className="me-auto">Sistema</strong>
+          </Toast.Header>
+          <Toast.Body className={toastConfig.variant === 'danger' ? 'text-white' : ''}>
+            {toastConfig.message}
+          </Toast.Body>
+        </Toast>
+      </ToastContainer>
+
+      <CancelModalForm
+        show={showCancelModalForm}
+        onClose={handleCloseCancelModalForm}
+        onConfirm={handleConfirmCancel} />
+
+      <Modal show={showAddressModal} onHide={() => setShowAddressModal(false)} centered>
+        <Modal.Header closeButton>
+          <Modal.Title>Domicilio del solicitante</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {domicilioModalData ? (
+            <AddressCard
+              street={domicilioModalData.calle || 'No especificado'}
+              province={domicilioModalData.provincia || 'No especificado'}
+              locality={domicilioModalData.localidad_nombre || 'No especificado'}
+              zipCode={domicilioModalData.codigo_postal || 'No especificado'}
+              floor={domicilioModalData.piso || ''}
+              department={domicilioModalData.departamento || ''}
+              noHover={true}
+            />
+          ) : (
+            <div className="text-center">No se encontró un domicilio para este usuario.</div>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowAddressModal(false)}>Cerrar</Button>
+        </Modal.Footer>
+      </Modal>
     </div>
   );
 }

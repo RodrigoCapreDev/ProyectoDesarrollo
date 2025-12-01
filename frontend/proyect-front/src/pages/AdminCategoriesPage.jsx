@@ -1,8 +1,7 @@
-import React from 'react';
 import { useState, useEffect, useContext } from 'react';
-import { Modal, Form, Button, Spinner } from 'react-bootstrap';
-import axios from 'axios';
+import { Form, Spinner } from 'react-bootstrap';
 import { useBackendURL } from '../contexts/BackendURLContext';
+import apiService from "../services/axiosConfig.jsx"; 
 import AuthContext from '../contexts/AuthContext';
 import AdminHeaderWithModal from '../components/admin/AdminHeaderWithModal';
 import AdminTable from '../components/admin/AdminTable';
@@ -12,8 +11,9 @@ function AdminCategoriesPage() {
   const [showModal, setShowModal] = useState(false);
   const [newCategory, setnewCategory] = useState({
     descripcion: '',
-    idCategoria: '',
+    id_categoria: '',
   });
+  const [newCategoryErrors, setNewCategoryErrors] = useState({});
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const backendURL = useBackendURL();
@@ -22,7 +22,7 @@ function AdminCategoriesPage() {
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await axios.get(`${backendURL}/api/categoria`);
+        const response = await apiService.getCategories();
         console.log("Categorías obtenidas:", response.data);
         setCategories(response.data);
         setLoading(false);
@@ -51,9 +51,18 @@ function AdminCategoriesPage() {
   };
 
   const handleSave = async () => {
+    const errors = {};
+    if (!newCategory.descripcion || newCategory.descripcion.trim() === '') {
+      errors.descripcion = 'El nombre es obligatorio';
+    }
+    if (Object.keys(errors).length > 0) {
+      setNewCategoryErrors(errors);
+      return;
+    }
+
     try {
       console.log("guardando categoria... ", newCategory);
-      const response = await axios.post(`${backendURL}/api/categoria`, newCategory, {
+      const response = await apiService.createCategory(newCategory, {
         headers: {
           Authorization: `Bearer ${userToken}`
         }
@@ -61,15 +70,18 @@ function AdminCategoriesPage() {
       if (response.status === 201) {
         console.log("Categoria guardado correctamente");
         console.log("Respuesta del servidor", response.data);
-        window.location.reload();
+        // Add the created category to the table data instead of reloading the page
+        setCategories((prev) => [...prev, response.data]);
+        // Reset form
+        setnewCategory({ descripcion: '', id_categoria: '' });
+        setNewCategoryErrors({});
+        setShowModal(false);
       } else {
         console.log("Error al guardar la categoria", response.data);
       }
     } catch (error) {
       console.error("Error al guardar la categoria", error);
     }
-
-    setShowModal(false);
   };
 
   const columnsProducts = [
@@ -78,20 +90,18 @@ function AdminCategoriesPage() {
   ];
 
   const onEditSave = (editedCategory) => {
-    return axios
-      .put(`${backendURL}/api/categoria/${editedCategory.id}`, editedCategory, {
+    return apiService.updateCategory(editedCategory, {
         headers: { Authorization: `Bearer ${userToken}` },
       })
       .then((res) => {
         console.log("Categoria actualizada correctamente");
-        return res.data; // Se espera que devuelva el categoria actualizado
+        return res.data;
       });
   };
 
-  // Callback para confirmar la eliminación del categoria
+
   const onDeleteConfirm = (id) => {
-    return axios
-      .delete(`${backendURL}/api/categoria/${id}`, {
+    return apiService.deleteCategory(id, {
         headers: { Authorization: `Bearer ${userToken}` },
       })
       .then(() => {
@@ -114,10 +124,14 @@ function AdminCategoriesPage() {
             <Form.Control
               type="text"
               name="descripcion"
-              value={newCategory.nombre}
+              value={newCategory.descripcion}
               onChange={handleChange}
               placeholder="Nombre del categoria"
+              isInvalid={!!newCategoryErrors.descripcion}
             />
+            <Form.Control.Feedback type="invalid">
+              {newCategoryErrors.descripcion}
+            </Form.Control.Feedback>
           </Form.Group>
         </Form>
       </AdminHeaderWithModal>
@@ -129,12 +143,18 @@ function AdminCategoriesPage() {
             <AdminTable
               initialData={categories}
               columns={columnsProducts}
+              validateEdit={(item) => {
+                const errors = {};
+                if (!item.descripcion || String(item.descripcion).trim() === '') errors.descripcion = 'El nombre es obligatorio';
+                return errors;
+              }}
               onEditSave={onEditSave}
               onDeleteConfirm={onDeleteConfirm}
-              renderEditForm={(selectedItem, handleEditChange) => (
+              renderEditForm={(selectedItem, handleEditChange, editErrors) => (
                 <RenderEditCategoryForm
                   selectedItem={selectedItem}
                   handleEditChange={handleEditChange}
+                  errors={editErrors}
                 />
               )}
               editModalTitle="Editar Categoria"

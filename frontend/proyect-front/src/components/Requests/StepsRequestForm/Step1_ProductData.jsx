@@ -12,41 +12,30 @@ export default function StepProductData({ formData, control, errors, setValue })
   const [productTypes, setProductTypes] = useState([]);
   const serviceType = queryParams.get('type');
   const categoryId = parseInt(formData?.productData?.categoryId);
-  const productTypeId = parseInt(formData?.productData?.productTypeId);
 
   useEffect(() => {
     loadCategories();
-    loadProducts();
-    console.log("Service type:", formData?.productData.serviceId);
-    if (formData?.productData.serviceId === 2) loadMaintenances();
-  }, [formData?.productData.serviceId]);
+    if (serviceType === 'maintenance') {
+      loadMaintenances();
+    }
+  }, [serviceType]);
 
   useEffect(() => {
-    if (categoryId && serviceType === 'repair') {
+    if (categoryId) {
       loadProductsByCatId(categoryId);
     }
   }, [categoryId]);
 
   const resetProductTypeSelection = () => {
     setValue('productData.productTypeId', null);
-    if (serviceType === 'maintenance') {setValue('productData.maintenanceTypeId', null);}
+    if (serviceType === 'maintenance') { setValue('productData.maintenanceTypeId', null); }
   };
-
   const loadCategories = async () => {
     try {
       const response = await apiService.getCategories();
       setCategories(response.data);
     } catch (error) {
       console.error("Error al obtener las categorias:", error);
-    }
-  };
-
-  const loadProducts = async () => {
-    try {
-      const response = await apiService.getProducts();
-      setProductTypes(response.data);
-    } catch (error) {
-      console.error("Error al obtener los productos:", error);
     }
   };
 
@@ -68,11 +57,20 @@ export default function StepProductData({ formData, control, errors, setValue })
     }
   };
 
-  const getProductNameById = (id) => {
-    const productType = productTypes.find(type => type.id === id);
-    return productType.descripcion;
-  };
-  const getCategoryByProductTypeId = (id) => {
+  const getProductNameById = (products, id) => {
+
+    if (!products || !Array.isArray(products)) return '';
+    if (id === null || id === undefined) return '';
+    const pid = Number(id);
+    if (!Number.isFinite(pid) || pid === 0) return '';
+    const product = products.find(p =>
+      p.id === pid ||
+      p.productTypeId === pid ||
+      p.idProducto === pid
+    );
+    return product?.descripcion || product?.name || '';
+  }
+/*  const getCategoryByProductTypeId = (id) => {
     const productType = productTypes.find(type => type.id === id);
     return categories.find(category => category.id === productType.idCategoria);
   };
@@ -83,8 +81,11 @@ export default function StepProductData({ formData, control, errors, setValue })
     const category = getCategoryByProductTypeId(maintenance.idTipoProducto);
     setValue('productData.categoryId', category.id);
   };
+*/  const handleCardClick = (maintenance) => {
+    setValue('productData.maintenanceTypeId', maintenance.id);
+  }
 
-  const filteredCategories = serviceType === 'maintenance' ? categories.filter(category =>
+/*  const filteredCategories = serviceType === 'maintenance' ? categories.filter(category =>
     maintenanceArray.some(maintenance => {
       const productType = productTypes.find(type => type.id === maintenance.idTipoProducto);
       return productType && productType.idCategoria === category.id;
@@ -96,12 +97,12 @@ export default function StepProductData({ formData, control, errors, setValue })
   ) : productTypes;
 
   const filteredMaintenanceArray = maintenanceArray.filter(maintenance => {
-      const productType = productTypes.find(type => type.id === maintenance.idTipoProducto);
-      const categoryMatch =  formData.productData.categoryId ? parseInt(productType?.idCategoria) === formData.productData.categoryId : true;
-      const productMatch = productTypeId ? maintenance.idTipoProducto === productTypeId : true;
-      return categoryMatch && productMatch;
-    });
-
+    const productType = productTypes.find(type => type.id === maintenance.idTipoProducto);
+    const categoryMatch = formData.productData.categoryId ? parseInt(productType?.idCategoria) === formData.productData.categoryId : true;
+    const productMatch = productTypeId ? maintenance.idTipoProducto === productTypeId : true;
+    return categoryMatch && productMatch;
+  });
+*/
   return (
     <>
       <div className='row mb-3'>
@@ -118,7 +119,7 @@ export default function StepProductData({ formData, control, errors, setValue })
               }}
             >
               <option value="">Seleccione una categoría</option>
-              {filteredCategories.map(category => (
+              {categories.map(category => (
                 <option key={category.id} value={category.id}>
                   {category.descripcion}
                 </option>
@@ -135,8 +136,8 @@ export default function StepProductData({ formData, control, errors, setValue })
               onChange={(e) => { field.onChange(parseInt(e.target.value)); }}
             >
               <option value="">Seleccione un tipo de producto</option>
-              {filteredProductTypes.length > 0 ? (
-                filteredProductTypes.map(type => (
+              {productTypes.length > 0 ? (
+                productTypes.map(type => (
                   <option key={type.id} value={type.id}>
                     {type.descripcion}
                   </option>
@@ -169,7 +170,7 @@ export default function StepProductData({ formData, control, errors, setValue })
             <div className='col-12'>
               <p><b>Tipo de mantenimiento</b></p>
               <div className="row">
-                {filteredMaintenanceArray.map((maintenance) => (
+                {maintenanceArray.map((maintenance) => (
                   <div key={maintenance.id} className="col-md-3">
                     <Card style={{
                       width: '18rem',

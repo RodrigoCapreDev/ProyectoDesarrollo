@@ -39,8 +39,8 @@ export default function AdminRequestsPage() {
       item.id,
       item.tipoServicio,
       item.fechaGeneracion,
-      item.estado,
       item.tipoDeProducto || "N/A",
+      item.estado,
     ]);
     autoTable(doc, {
       startY: 20, // Posición inicial
@@ -95,15 +95,17 @@ export default function AdminRequestsPage() {
       ) : (
         <>
           <div className="admin-requests title m-2 d-flex flex-row justify-content-between">
-            <h2>Solicitudes de Reparación</h2>
+            <h2>Solicitudes de servicios</h2>
             <Button variant="outline-secondary" onClick={() => handleDownload()}>
               <FontAwesomeIcon icon={faArrowDown} />
             </Button>
           </div>
-          <AdminRequestsTable
-            initialData={requests}
-            handleDownload={handleDownloadItem}
-          />
+          <div className="p-2 flex-grow-1 overflow-auto">
+            <AdminRequestsTable
+              initialData={requests}
+              handleDownload={handleDownloadItem}
+            />
+          </div>
         </>
       )}
     </div>

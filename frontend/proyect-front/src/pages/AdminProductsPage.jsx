@@ -1,8 +1,6 @@
-import React from 'react';
 import { useState, useEffect, useContext } from 'react';
-import { Modal, Form, Button, Spinner } from 'react-bootstrap';
-import axios from 'axios';
-import { useBackendURL } from '../contexts/BackendURLContext';
+import { Form, Spinner } from 'react-bootstrap';
+import apiService from '../services/axiosConfig';
 import AuthContext from '../contexts/AuthContext';
 import AdminHeaderWithModal from '../components/admin/AdminHeaderWithModal';
 import AdminTable from '../components/admin/AdminTable';
@@ -12,18 +10,18 @@ function AdminProductsPage() {
   const [showModal, setShowModal] = useState(false);
   const [newProduct, setNewProduct] = useState({
     descripcion: '',
-    idCategoria: '',
+    id_categoria: '', 
   });
+  const [newProductErrors, setNewProductErrors] = useState({});
   const [categories, setCategories] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const backendURL = useBackendURL();
   const { userToken } = useContext(AuthContext);
 
   useEffect(() => {
     const fetchCategories = async () => {
       try {
-        const response = await axios.get(`${backendURL}/api/categoria`);
+        const response = await apiService.getCategories();
         console.log("Categorías obtenidas:", response.data);
         setCategories(response.data);
       } catch (error) {
@@ -32,12 +30,12 @@ function AdminProductsPage() {
     };
 
     fetchCategories();
-  }, [backendURL]);
+  }, []);
 
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const response = await axios.get(`${backendURL}/api/tipoproducto`);
+        const response = await apiService.getProducts();
         console.log("productos obtenidos:", response.data);
         setProducts(response.data);
         setLoading(false);
@@ -48,7 +46,7 @@ function AdminProductsPage() {
     };
 
     fetchProducts();
-  }, [backendURL]);
+  }, []);
 
   const handleAdd = () => {
     setShowModal(true);
@@ -66,55 +64,65 @@ function AdminProductsPage() {
   };
 
   const handleSave = async () => {
+    // Client-side validation
+    const errors = {};
+    if (!newProduct.descripcion || newProduct.descripcion.trim() === '') {
+      errors.descripcion = 'El nombre es obligatorio';
+    }
+    if (!newProduct.id_categoria || String(newProduct.id_categoria).trim() === '') {
+      errors.id_categoria = 'La categoría es obligatoria';
+    }
+    if (Object.keys(errors).length > 0) {
+      setNewProductErrors(errors);
+      return;
+    }
+
     try {
       console.log("guardando producto... ", newProduct);
-      const response = await axios.post(`${backendURL}/api/tipoproducto`, newProduct, {
-        headers: {
-          Authorization: `Bearer ${userToken}`
-        }
-      });
+      const response = await apiService.createProduct(newProduct);
       if (response.status === 201) {
         console.log("Producto guardado correctamente");
         console.log("Respuesta del servidor", response.data);
-        window.location.reload();
+        // Append the created product to the table data instead of reloading
+        setProducts((prev) => [...prev, response.data]);
+        // Reset form
+        setNewProduct({ descripcion: '', id_categoria: '' });
+        setNewProductErrors({});
+        setShowModal(false);
       } else {
         console.log("Error al guardar el producto", response.data);
       }
     } catch (error) {
       console.error("Error al guardar el producto", error);
     }
-
-    setShowModal(false);
   };
 
   const columnsProducts = [
     { accessorKey: "id", header: "ID", enableSorting: true },
     { accessorKey: "descripcion", header: "Nombre" },
     {
-      accessorKey: "idCategoria",
+      accessorKey: "id_categoria",
       header: "Categoría",
-      cell: ({ row, table }) => {
-        // map category id to category name
-        const category = categories.find((c) => c.id === row.original.idCategoria);
+      cell: ({ row }) => {
+        const prodCatId = row.original.id_categoria ?? row.original.idCategoria ?? row.original.idCategoria;
+        const category = categories.find((cat) => String(cat.id) === String(prodCatId));
         return category ? category.descripcion : "Sin categoría";
       },
     },
   ];
+
   const onEditSave = (editedProduct) => {
-    return axios
-      .put(`${backendURL}/api/tipoproducto/${editedProduct.id}`, editedProduct, {
+    return apiService.updateProduct(editedProduct, {
         headers: { Authorization: `Bearer ${userToken}` },
       })
       .then((res) => {
         console.log("Producto actualizado correctamente");
-        return res.data; // Se espera que devuelva el producto actualizado
+        return res.data; 
       });
   };
 
-  // Callback para confirmar la eliminación del producto
   const onDeleteConfirm = (id) => {
-    return axios
-      .delete(`${backendURL}/api/tipoproducto/${id}`, {
+    return apiService.deleteProduct(id, {
         headers: { Authorization: `Bearer ${userToken}` },
       })
       .then(() => {
@@ -137,19 +145,24 @@ function AdminProductsPage() {
             <Form.Control
               type="text"
               name="descripcion"
-              value={newProduct.nombre}
+              value={newProduct.descripcion} 
               onChange={handleChange}
               placeholder="Nombre del producto"
+                isInvalid={!!newProductErrors.descripcion}
             />
+              <Form.Control.Feedback type="invalid">
+                {newProductErrors.descripcion}
+              </Form.Control.Feedback>
           </Form.Group>
 
           <Form.Group>
             <Form.Label>Categoría</Form.Label>
             <Form.Control
               as="select"
-              name="idCategoria"
-              value={newProduct.categoria}
+              name="id_categoria"
+              value={newProduct.id_categoria}
               onChange={handleChange}
+                isInvalid={!!newProductErrors.id_categoria}
             >
               <option value="">Selecciona una categoría</option>
               {categories.map((category, index) => (
@@ -158,6 +171,9 @@ function AdminProductsPage() {
                 </option>
               ))}
             </Form.Control>
+              <Form.Control.Feedback type="invalid">
+                {newProductErrors.id_categoria}
+              </Form.Control.Feedback>
           </Form.Group>
         </Form>
       </AdminHeaderWithModal>
@@ -170,14 +186,21 @@ function AdminProductsPage() {
               initialData={products}
               columns={columnsProducts}
               onEditSave={onEditSave}
+                validateEdit={(item) => {
+                  const errors = {};
+                  if (!item.descripcion || String(item.descripcion).trim() === '') errors.descripcion = 'El nombre es obligatorio';
+                  if (!item.id_categoria || String(item.id_categoria).trim() === '') errors.id_categoria = 'La categoría es obligatoria';
+                  return errors;
+                }}
               onDeleteConfirm={onDeleteConfirm}
-              renderEditForm={(selectedItem, handleEditChange) => (
-                <RenderEditProductForm
-                  selectedItem={selectedItem}
-                  handleEditChange={handleEditChange}
-                  categories={categories}
-                />
-              )}
+                renderEditForm={(selectedItem, handleEditChange, editErrors) => (
+                  <RenderEditProductForm
+                    selectedItem={selectedItem}
+                    handleEditChange={handleEditChange}
+                    categories={categories}
+                    errors={editErrors}
+                  />
+                )}
               editModalTitle="Editar Producto"
               deleteModalTitle="Confirmar Eliminación"
               deleteModalMessage="¿Estás seguro de que quieres eliminar este producto?" />
